@@ -1,16 +1,19 @@
+from urllib.parse import parse_qs, urlparse
+
+import pandas as pd
 import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, dcc, html
 from dash.exceptions import PreventUpdate
 
 from app import app
-from dbconnect import getDataFromDB, modifyDB
-from urllib.parse import urlparse, parse_qs
+from apps.dbconnect import getDataFromDB, modifyDB
 
 layout = html.Div(
     [
-        dcc.Store(id='movieprofile_movieid',storage_type='memory',data=0),
 
+        dcc.Store(id='movieprofile_movieid', storage_type='memory', data=0),
+        
         html.H2('Movie Details'), # Page Header
         html.Hr(),
         dbc.Alert(id='movieprofile_alert', is_open=False), # For feedback purposes
@@ -48,6 +51,54 @@ layout = html.Div(
                 ),
                 dbc.Row(
                     [
+                        dbc.Label("Country", width=1),
+                        dbc.Col(
+                            html.Div(
+                                dcc.Dropdown(
+                                    id='movieprofile_country',
+                                    placeholder='Country'
+                                ),
+                                className='dash-bootstrap'
+                            ),
+                            width=5,
+                        )
+                    ],
+                    className='mb-3'
+                ),
+                dbc.Row(
+                    [
+                        dbc.Label("Language", width=1),
+                        dbc.Col(
+                            html.Div(
+                                dcc.Dropdown(
+                                    id='movieprofile_language',
+                                    placeholder='Language'
+                                ),
+                                className='dash-bootstrap'
+                            ),
+                            width=5,
+                        )
+                    ],
+                    className='mb-3'
+                ),
+                dbc.Row(
+                    [
+                        dbc.Label("Actor", width=1),
+                        dbc.Col(
+                            html.Div(
+                                dcc.Dropdown(
+                                    id='movieprofile_actor',
+                                    placeholder='Actor'
+                                ),
+                                className='dash-bootstrap'
+                            ),
+                            width=5,
+                        )
+                    ],
+                    className='mb-3'
+                ),
+                dbc.Row(
+                    [
                         dbc.Label("Release Date", width=1),
                         dbc.Col(
                             dcc.DatePickerSingle(
@@ -61,21 +112,20 @@ layout = html.Div(
                     ],
                     className='mb-3'
                 ),
+                html.Div(
+                    [
+                        dbc.Checklist(
+                            id='movieprofile_deleteind',
+                            options= [dict(value=1, label="Mark as Deleted")],
+                            value=[] 
+                        )
+                    ], 
+                    id='movieprofile_deletediv'
+                )
 
             ]
         ),
-        # mark as deleted checkbox
-        html.Div(
-            [
-                dbc.Checklist(
-                    id='movieprofile_deleteind',
-                    options= [dict(value=1, label="Mark as Deleted")],
-                    value=[] 
-                )
-            ], 
-            id='movieprofile_deletediv'
-        ),
-        dbc.Button(
+          dbc.Button(
             'Submit',
             id='movieprofile_submit',
             n_clicks=0 # Initialize number of clicks
@@ -83,10 +133,12 @@ layout = html.Div(
         dbc.Modal( # Modal = dialog box; feedback for successful saving.
             [
                 dbc.ModalHeader(
-                    html.H4('Save Success', id='movieprofile_modalheader')
+                    html.H4('Save Success',
+                    id='movieprofile_modaltitle')
                 ),
                 dbc.ModalBody(
-                    'Message here! Edit me please!'
+                    'Added to database!',
+                    id='movieprofile_modalbody'
                 ),
                 dbc.ModalFooter(
                     dbc.Button(
@@ -106,13 +158,13 @@ layout = html.Div(
     [
         Output('movieprofile_genre', 'options'),
         Output('movieprofile_movieid', 'data'),
-        Output('movieprofile_deletediv','className'),
+        Output('movieprofile_deletediv', 'className')
     ],
     [
         Input('url', 'pathname'),
     ],
     [
-        State('url','search'),
+        State('url', 'search'),
     ]
 )
 def movieprofile_populategenres(pathname, urlsearch):
@@ -137,18 +189,56 @@ def movieprofile_populategenres(pathname, urlsearch):
 
         parsed = urlparse(urlsearch)
         create_mode = parse_qs(parsed.query)['mode'][0]
-
+        
         if create_mode == 'add':
             movieid = 0
             deletediv = 'd-none'
         else:
             movieid = int(parse_qs(parsed.query)['id'][0])
             deletediv = ''
-
+        
         return [genre_options, movieid, deletediv]
     else:
         raise PreventUpdate
+    
+@app.callback(
+    [
+        Output('movieprofile_country', 'options'),
+        Output('movieprofile_actor', 'options'),
+        Output('movieprofile_language', 'options'),
+    ],
+    [
+        Input('url', 'pathname'),
+    ]
+)
+def movieprofile_populatelinks(pathname):
+    if pathname == '/movies/movie_management_profile':
+        country_sql = """
+        SELECT country_name as label, country_id as value
+        FROM countries
+        WHERE NOT country_delete_ind
+        ORDER BY country_name
+        """
+        actor_sql = """
+        SELECT CONCAT_WS(' ', actor_fname, actor_lname) as label, actor_id as value
+        FROM actors
+        WHERE NOT actor_delete_ind
+        ORDER BY label
+        """
+        language_sql = """
+        SELECT language_name as label, language_id as value
+        FROM languages
+        WHERE NOT language_delete_ind
+        ORDER BY language_name
+        """
+        cols = ['label', 'value']
 
+        country_options = getDataFromDB(country_sql, [], cols).to_dict('records')
+        actor_options = getDataFromDB(actor_sql, [], cols).to_dict('records')
+        language_options = getDataFromDB(language_sql, [], cols).to_dict('records')
+        return [country_options, actor_options, language_options]
+    else:
+        raise PreventUpdate
         
 @app.callback(
     [
@@ -158,112 +248,130 @@ def movieprofile_populategenres(pathname, urlsearch):
         Output('movieprofile_alert', 'is_open'),
         # dbc.Modal Properties
         Output('movieprofile_successmodal', 'is_open'),
-        #to change modal header
-        Output('movieprofile_modalheader', 'children')
+        Output('movieprofile_modaltitle', 'children'),
+        Output('movieprofile_modalbody', 'children'),
     ],
     [
-        # For buttons, the property n_clicks 
         Input('movieprofile_submit', 'n_clicks')
     ],
     [
-        # The values of the fields are States 
-        # They are required in this process but they 
-        # do not trigger this callback
         State('movieprofile_title', 'value'),
         State('movieprofile_genre', 'value'),
+        State('movieprofile_country', 'value'),
+        State('movieprofile_language', 'value'),
+        State('movieprofile_actor', 'value'),
         State('movieprofile_releasedate', 'date'),
-        State('url', 'search'), 
+        State('url', 'search'),
         State('movieprofile_movieid', 'data'),
         State('movieprofile_deleteind', 'value'),
     ]
 )
-def movieprofile_saveprofile(submitbtn, title, genre, releasedate, urlsearch, movieid, deleteind):
+def movieprofile_saveprofile(submitbtn, title, genre, country, language, actor,
+                             releasedate, urlsearch, movieid, deleteind):
     ctx = dash.callback_context
-    # The ctx filter -- ensures that only a change in url will activate this callback
     if ctx.triggered:
         eventid = ctx.triggered[0]['prop_id'].split('.')[0]
-
-        # Parse search value
         parsed = urlparse(urlsearch)
-        # get the corresponding value for 'mode' from the URL
-        
         create_mode = parse_qs(parsed.query)['mode'][0]
+    else:
+        raise PreventUpdate
 
-        # Condition if create_mode is add or edit
-        if create_mode == 'add':
-            sql = '''
-                INSERT INTO movies (movie_name, genre_id,
-                movie_release_date, movie_delete_ind)
-                VALUES (%s, %s, %s, %s)
-            '''
-            values = [title, genre, releasedate, False]
+    if eventid == 'movieprofile_submit' and submitbtn:
 
-            #modalheader for add
-            modalheader_text = 'Save Success'
+        alert_open = False
+        modal_open = False
+        modal_title = ''
+        modal_text = ''
+        alert_color = ''
+        alert_text = ''
 
-        elif create_mode == 'edit':
-            sql = '''
-                UPDATE movies 
-                SET 
-                    movie_name = %s,
-                    genre_id = %s,
-                    movie_release_date = %s,
-                    movie_delete_ind = %s
-                WHERE
-                    movie_id = %s
-            '''
-            values = [title, genre, releasedate, bool(deleteind), movieid]
-
-            #modalheader for edit
-            modalheader_text = 'Update Success'
+        if not title:
+            alert_open = True
+            alert_color = 'danger'
+            alert_text = 'Check your inputs. Please supply the movie title.'
+        elif not genre:
+            alert_open = True
+            alert_color = 'danger'
+            alert_text = 'Check your inputs. Please supply the movie genre.'
+        elif not language:
+            alert_open = True
+            alert_color = 'danger'
+            alert_text = 'Check your inputs. Please supply the movie language.'
+        elif not releasedate:
+            alert_open = True
+            alert_color = 'danger'
+            alert_text = 'Check your inputs. Please supply the movie release date.'
         else:
-            raise PreventUpdate
 
-        if eventid == 'movieprofile_submit' and submitbtn:
-            # the submitbtn condition checks if the callback was indeed activated by a click
-            # and not by having the submit button appear in the layout
+            if create_mode == 'add':
 
-            # Set default outputs
-            alert_open = False
-            modal_open = False
-            alert_color = ''
-            alert_text = ''
+                check_sql = """
+                    SELECT movie_id
+                    FROM movies
+                    WHERE LOWER(movie_name) = LOWER(%s)
+                        AND movie_delete_ind = False
+                """
+                check_df = getDataFromDB(check_sql, [title.strip()], ['movie_id'])
 
-            # We need to check inputs
-            if not title: # If title is blank, not title = True
-                alert_open = True
-                alert_color = 'danger'
-                alert_text = 'Check your inputs. Please supply the movie title.'
-            elif not genre:
-                alert_open = True
-                alert_color = 'danger'
-                alert_text = 'Check your inputs. Please supply the movie genre.'
-            elif not releasedate:
-                alert_open = True
-                alert_color = 'danger'
-                alert_text = 'Check your inputs. Please supply the movie release date.'
-            else: # all inputs are valid
-                # Add the data into the db
+                if not check_df.empty:
+                    alert_open = True
+                    alert_color = 'danger'
+                    alert_text = 'Movie title already exists. Please enter a unique title.'
+                    return [alert_color, alert_text, alert_open, modal_open, modal_title, modal_text]
 
-                modifyDB(sql, values)
+                sql = '''
+                    INSERT INTO movies (movie_name, genre_id, country_id, language_id, actor_id,
+                        movie_release_date, movie_delete_ind)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                '''
+                values = [title, genre, country, language, actor, releasedate, False]
 
-                # If this is successful, we want the successmodal to show
-                modal_open = True
+                modal_title = 'Movie Added'
+                modal_text = 'The movie was added successfully.'
 
-            return [alert_color, alert_text, alert_open, modal_open, modalheader_text]
+            elif create_mode == 'edit':
+                sql = '''
+                    UPDATE movies
+                    SET
+                        movie_name = %s,
+                        genre_id = %s,
+                        country_id = %s,
+                        language_id = %s,
+                        actor_id = %s,
+                        movie_release_date = %s,
+                        movie_delete_ind = %s
+                    WHERE
+                        movie_id = %s
+                '''
+                values = [title, genre, country, language, actor, releasedate,
+                          bool(deleteind), movieid]
 
-        else: 
-            raise PreventUpdate
+                if deleteind:
+                    modal_title = 'Movie Deleted'
+                    modal_text = 'The movie was marked as deleted.'
+                else:
+                    modal_title = 'Movie Updated'
+                    modal_text = 'The movie details were updated successfully.'
+
+            else:
+                raise PreventUpdate
+
+            modifyDB(sql, values)
+            modal_open = True
+
+        return [alert_color, alert_text, alert_open, modal_open, modal_title, modal_text]
 
     else:
         raise PreventUpdate
 
-# callback to populate fields in mode edit
 @app.callback(
     [
         Output('movieprofile_title', 'value'),
         Output('movieprofile_genre', 'value'),
         Output('movieprofile_releasedate', 'date'),
+        Output('movieprofile_country', 'value'),
+        Output('movieprofile_actor', 'value'),
+        Output('movieprofile_language', 'value'),
     ],
     [
         Input('movieprofile_movieid', 'modified_timestamp')
@@ -273,45 +381,28 @@ def movieprofile_saveprofile(submitbtn, title, genre, releasedate, urlsearch, mo
     ]
 )
 def movieprofile_loadprofile(timestamp, movieid):
-    if movieid: # check if movieid > 0
+    if movieid:
 
-        # Query from db
         sql = """
-            SELECT movie_name, genre_id, movie_release_date
+            SELECT movie_name, genre_id, movie_release_date, country_id, actor_id, language_id
             FROM movies
             WHERE movie_id = %s
         """
         values = [movieid]
-        col = ['moviename', 'genreid', 'releasedate']
+        col = ['moviename', 'genreid', 'releasedate', 'countryid', 'actorid', 'languageid']
 
         df = getDataFromDB(sql, values, col)
 
         moviename = df['moviename'][0]
-        # Our dropdown list has the genreids as values then it will 
-        # display the correspoinding labels
         genreid = int(df['genreid'][0])
         releasedate = df['releasedate'][0]
 
-        return [moviename, genreid, releasedate]
+        # Empty database values come back as NaN; convert them to None
+        countryid = None if pd.isna(df['countryid'][0]) else int(df['countryid'][0])
+        actorid = None if pd.isna(df['actorid'][0]) else int(df['actorid'][0])
+        languageid = None if pd.isna(df['languageid'][0]) else int(df['languageid'][0])
+
+        return [moviename, genreid, releasedate, countryid, actorid, languageid]
 
     else:
         raise PreventUpdate
-
-#Callback to update the submit button to delete if checked
-@app.callback(
-    [
-        Output('movieprofile_submit', 'children'),
-        Output('movieprofile_submit', 'color')
-    ],
-    [
-        Input('movieprofile_deleteind', 'value')
-    ]
-)
-
-def movieprofile_updatebutton (movieprofile_deleteind):
-    if 1 in movieprofile_deleteind:
-        return['Delete Record', 'danger']
-
-    #have to return back to original state if unchecked
-    else:
-        return['Submit', 'primary']

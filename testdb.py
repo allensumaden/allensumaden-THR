@@ -1,4 +1,4 @@
-import dbconnect as db
+import apps.dbconnect as db
 
 def addGenres(genre_name):
     sqlcode = """

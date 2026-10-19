@@ -26,9 +26,23 @@ navbar = dbc.Navbar(
             ),
             dbc.NavLink("Home", href="/home", style=navlink_style),
             dbc.NavLink("Movies", href="/movies/movie_management", style=navlink_style),
-            dbc.NavLink("Genres", href="/genres", style=navlink_style),
-        ], className='m-0 justify-content-start'
-        
+            dbc.NavLink("Genres", href="/genres/genre_management", style=navlink_style),
+            dbc.NavLink("Actors", href="/actors/actor_management", style=navlink_style),
+                        dbc.DropdownMenu(
+                [
+                    dbc.DropdownMenuItem("Movies per Genre and Country", href="/reports/report"),
+                    dbc.DropdownMenuItem("Movies per Genre and Language", href="/reports/genre_language_report"),
+                ],
+                label="Reports",
+                nav=True,
+                in_navbar=True,
+                toggle_style={'color': '#fff'},
+            ),
+            dbc.NavLink("Logout", href="/logout", 
+                        style = {'color': '#fff', 'margin-left': 'auto'}),
+        ], 
+        fluid=True,
+        className='m-0 justify-content-start',
     ),
     dark=True,
     color='dark'
